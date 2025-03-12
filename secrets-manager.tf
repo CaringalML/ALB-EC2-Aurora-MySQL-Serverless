@@ -45,8 +45,15 @@ resource "aws_secretsmanager_secret_version" "aurora_credentials_update" {
   depends_on = [aws_rds_cluster.primary]
 }
 
-# Output the Secret ARN for reference
-output "aurora_secret_arn" {
-  description = "ARN of the Aurora database credentials secret"
-  value       = aws_secretsmanager_secret.aurora_credentials.arn
+# Add endpoint details for application access
+output "db_connection_details" {
+  description = "Database connection details for application"
+  value = {
+    host     = aws_rds_cluster.primary.endpoint
+    port     = aws_rds_cluster.primary.port
+    dbname   = var.db_name
+    username = "Stored in Secrets Manager"
+    secret   = aws_secretsmanager_secret.aurora_credentials.name
+  }
+  sensitive = false
 }

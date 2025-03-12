@@ -129,3 +129,17 @@ variable "ssl_policy" {
   type        = string
   default     = "ELBSecurityPolicy-2016-08"
 }
+
+
+variable "create_snapshot" {
+  description = "Whether to create a final snapshot before deletion"
+  type        = bool
+  default     = false //make this true if you want to have a final snapshot
+}
+
+
+variable "ecr_repository_name" {
+  description = "Name of the ECR repository"
+  type        = string
+  default     = "artisan-tiling-repo"
+}

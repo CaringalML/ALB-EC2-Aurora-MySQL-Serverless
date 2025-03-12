@@ -2,12 +2,10 @@
 data "aws_ami" "ubuntu" {
   most_recent = true
   owners      = ["099720109477"] # Canonical
-
   filter {
     name   = "name"
     values = ["ubuntu/images/hvm-ssd/ubuntu-jammy-22.04-amd64-server-*"]
   }
-
   filter {
     name   = "virtualization-type"
     values = ["hvm"]
@@ -20,42 +18,71 @@ resource "aws_launch_template" "app" {
   image_id               = data.aws_ami.ubuntu.id
   instance_type          = var.instance_type
   vpc_security_group_ids = [aws_security_group.ec2.id]
-  user_data              = base64encode(<<-EOF
+  
+  user_data = base64encode(<<-EOF
     #!/bin/bash
+    # Update packages and install docker
     apt-get update
-    apt-get install -y nginx
-    echo "Hello from Artisan Tiling!" > /var/www/html/index.html
-    systemctl enable nginx
-    systemctl start nginx
+    apt-get install -y apt-transport-https ca-certificates curl software-properties-common awscli
+    curl -fsSL https://download.docker.com/linux/ubuntu/gpg | apt-key add -
+    add-apt-repository "deb [arch=amd64] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable"
+    apt-get update
+    apt-get install -y docker-ce
+
+    # Start docker service
+    systemctl enable docker
+    systemctl start docker
+
+    # Configure AWS CLI and login to ECR
+    export AWS_DEFAULT_REGION=ap-southeast-2
+    ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+    ECR_REPOSITORY="${var.ecr_repository_name}"
+    ECR_URL="$ACCOUNT_ID.dkr.ecr.ap-southeast-2.amazonaws.com"
+    
+    # Login to ECR
+    aws ecr get-login-password --region ap-southeast-2 | docker login --username AWS --password-stdin $ECR_URL
+    
+    # Pull the latest image
+    docker pull $ECR_URL/$ECR_REPOSITORY:latest
+    
+    # Stop any running container
+    docker stop $(docker ps -a -q) 2>/dev/null || true
+    docker rm $(docker ps -a -q) 2>/dev/null || true
+    
+    # Run the new container
+    docker run -d -p 80:80 $ECR_URL/$ECR_REPOSITORY:latest
   EOF
   )
-
+  
+  # Reference the IAM instance profile from iam.tf
   iam_instance_profile {
     name = aws_iam_instance_profile.ec2_profile.name
   }
-
+  
   block_device_mappings {
     device_name = "/dev/sda1"
-
     ebs {
       volume_size           = 20
       volume_type           = "gp3"
       delete_on_termination = true
     }
   }
-
+  
   tag_specifications {
     resource_type = "instance"
-
     tags = {
       Name = "${var.project_name}-app-instance"
     }
   }
-
+  
   lifecycle {
     create_before_destroy = true
   }
 }
+
+
+
+
 
 # Auto Scaling Group
 resource "aws_autoscaling_group" "app" {
@@ -70,18 +97,17 @@ resource "aws_autoscaling_group" "app" {
     id      = aws_launch_template.app.id
     version = "$Latest"
   }
-
+  
   target_group_arns = [aws_lb_target_group.app.arn]
-
   health_check_type         = "ELB"
   health_check_grace_period = 300
-
+  
   tag {
     key                 = "Name"
     value               = "${var.project_name}-app-asg"
     propagate_at_launch = true
   }
-
+  
   lifecycle {
     create_before_destroy = true
   }
@@ -94,7 +120,6 @@ resource "aws_autoscaling_policy" "cpu_scaling" {
   policy_type            = "TargetTrackingScaling"
   
   estimated_instance_warmup = 300  # 5-minute warmup period in seconds
-
   target_tracking_configuration {
     predefined_metric_specification {
       predefined_metric_type = "ASGAverageCPUUtilization"
@@ -104,38 +129,3 @@ resource "aws_autoscaling_policy" "cpu_scaling" {
   }
 }
 
-# IAM role for EC2 instances
-resource "aws_iam_role" "ec2_role" {
-  name = "${var.project_name}-ec2-role"
-
-  assume_role_policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [
-      {
-        Action = "sts:AssumeRole"
-        Effect = "Allow"
-        Principal = {
-          Service = "ec2.amazonaws.com"
-        }
-      }
-    ]
-  })
-}
-
-# IAM instance profile
-resource "aws_iam_instance_profile" "ec2_profile" {
-  name = "${var.project_name}-ec2-profile"
-  role = aws_iam_role.ec2_role.name
-}
-
-# Attach SSM policy to allow Systems Manager access
-resource "aws_iam_role_policy_attachment" "ssm_policy" {
-  role       = aws_iam_role.ec2_role.name
-  policy_arn = "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore"
-}
-
-# CloudWatch policy for logging
-resource "aws_iam_role_policy_attachment" "cloudwatch_policy" {
-  role       = aws_iam_role.ec2_role.name
-  policy_arn = "arn:aws:iam::aws:policy/CloudWatchAgentServerPolicy"
-}

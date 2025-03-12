@@ -22,15 +22,15 @@ resource "aws_rds_cluster" "primary" {
   preferred_maintenance_window    = "Sun:06:00-Sun:08:00"
   db_subnet_group_name            = aws_db_subnet_group.aurora.name
   vpc_security_group_ids          = [aws_security_group.aurora.id]
-  skip_final_snapshot             = var.environment == "production" ? false : true
-  final_snapshot_identifier       = var.environment == "production" ? "${var.project_name}-final-snapshot" : null
+  skip_final_snapshot             = var.create_snapshot ? false : true
+  final_snapshot_identifier       = var.create_snapshot ? "${var.project_name}-final-snapshot-${formatdate("YYYYMMDDHHmmss", timestamp())}" : null
   storage_encrypted               = true
   kms_key_id                      = aws_kms_key.primary_cluster_encryption.arn
   apply_immediately               = true
-  deletion_protection = false   //enabled this in production
+  deletion_protection             = false
   global_cluster_identifier       = aws_rds_global_cluster.global.id
   db_cluster_parameter_group_name = aws_rds_cluster_parameter_group.aurora.name
-  
+
   serverlessv2_scaling_configuration {
     min_capacity = 0.5
     max_capacity = 8.0
@@ -39,9 +39,8 @@ resource "aws_rds_cluster" "primary" {
   tags = {
     Name = "${var.project_name}-aurora-cluster-primary"
   }
-  
-  # No dependency needed here anymore
 }
+
 
 # Create KMS key for primary region cluster encryption
 resource "aws_kms_key" "primary_cluster_encryption" {

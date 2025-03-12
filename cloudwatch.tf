@@ -78,44 +78,38 @@ resource "aws_cloudwatch_dashboard" "main" {
       "height": 6,
       "properties": {
         "metrics": [
-          [ "AWS/RDS", "CPUUtilization", "DBClusterIdentifier", "${aws_rds_cluster.primary.cluster_identifier}", { "stat": "Average", "period": 300 } ]
-        ],
-        "view": "timeSeries",
-        "stacked": false,
-        "region": "${var.region}",
-        "title": "Aurora CPU Utilization"
-      }
-    },
-    {
-      "type": "metric",
-      "x": 12,
-      "y": 12,
-      "width": 12,
-      "height": 6,
-      "properties": {
-        "metrics": [
-          [ "AWS/RDS", "DatabaseConnections", "DBClusterIdentifier", "${aws_rds_cluster.primary.cluster_identifier}", { "stat": "Sum", "period": 300 } ]
-        ],
-        "view": "timeSeries",
-        "stacked": false,
-        "region": "${var.region}",
-        "title": "Aurora Database Connections"
-      }
-    },
-    {
-      "type": "metric",
-      "x": 0,
-      "y": 18,
-      "width": 24,
-      "height": 6,
-      "properties": {
-        "metrics": [
           [ "AWS/WAFV2", "BlockedRequests", "WebACL", "${var.project_name}-web-acl", "Region", "${var.region}", { "stat": "Sum", "period": 300 } ]
         ],
         "view": "timeSeries",
         "stacked": false,
         "region": "${var.region}",
         "title": "WAF Blocked Requests"
+      }
+    },
+    {
+      "type": "log",
+      "x": 12,
+      "y": 12,
+      "width": 12,
+      "height": 6,
+      "properties": {
+        "query": "SOURCE '/aws/ec2/${var.project_name}/docker' | fields @timestamp, @message\n| sort @timestamp desc\n| limit 20",
+        "region": "${var.region}",
+        "title": "Docker Container Logs",
+        "view": "table"
+      }
+    },
+    {
+      "type": "log",
+      "x": 0,
+      "y": 18,
+      "width": 24,
+      "height": 6,
+      "properties": {
+        "query": "SOURCE '/var/log/syslog' | fields @timestamp, @message\n| sort @timestamp desc\n| limit 20",
+        "region": "${var.region}",
+        "title": "EC2 System Logs",
+        "view": "table"
       }
     }
   ]
@@ -138,23 +132,6 @@ resource "aws_cloudwatch_metric_alarm" "high_cpu" {
 
   dimensions = {
     AutoScalingGroupName = aws_autoscaling_group.app.name
-  }
-}
-
-resource "aws_cloudwatch_metric_alarm" "aurora_cpu" {
-  alarm_name          = "${var.project_name}-aurora-cpu-alarm"
-  comparison_operator = "GreaterThanThreshold"
-  evaluation_periods  = 3
-  metric_name         = "CPUUtilization"
-  namespace           = "AWS/RDS"
-  period              = 300
-  statistic           = "Average"
-  threshold           = 80
-  alarm_description   = "This metric monitors Aurora CPU utilization"
-  alarm_actions       = [aws_sns_topic.alerts.arn]
-
-  dimensions = {
-    DBClusterIdentifier = aws_rds_cluster.primary.cluster_identifier
   }
 }
 
@@ -204,13 +181,23 @@ resource "aws_sns_topic" "alerts" {
 #   endpoint  = "admin@example.com"
 # }
 
-# CloudWatch Logs Group for Application
-resource "aws_cloudwatch_log_group" "app" {
-  name              = "/aws/ec2/${var.project_name}"
+# CloudWatch Logs Group for System logs
+resource "aws_cloudwatch_log_group" "system" {
+  name              = "/var/log/syslog"
   retention_in_days = 30
 
   tags = {
-    Name = "${var.project_name}-log-group"
+    Name = "${var.project_name}-system-log"
+  }
+}
+
+# CloudWatch Logs Group for Docker
+resource "aws_cloudwatch_log_group" "docker" {
+  name              = "/aws/ec2/${var.project_name}/docker"
+  retention_in_days = 30
+
+  tags = {
+    Name = "${var.project_name}-docker-log-group"
   }
 }
 
@@ -256,25 +243,10 @@ resource "aws_lb" "app" {
   }
 }
 
-# S3 bucket for cleanup with force_destroy enabled
-resource "aws_s3_bucket" "cleanup_alb_logs" {
-  bucket        = "${var.project_name}-alb-logs-${random_string.suffix.result}"
-  force_destroy = true
-  
-  lifecycle {
-    prevent_destroy = false
-  }
-  
-  tags = {
-    Name = "${var.project_name}-alb-logs-cleanup"
-  }
+# Random string generator for resource uniqueness
+resource "random_string" "suffix" {
+  length  = 8
+  special = false
+  lower   = true
+  upper   = false
 }
-
-
-# # Add this to your cloudwatch.tf
-# resource "aws_s3_bucket_object" "cleanup" {
-#   for_each = fileset("${path.module}/empty", "*")
-#   bucket   = aws_s3_bucket.cleanup_alb_logs.id
-#   key      = "delete-all/"
-#   source   = "/dev/null"
-# }

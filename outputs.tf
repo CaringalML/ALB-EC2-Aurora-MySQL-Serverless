@@ -82,3 +82,38 @@ output "secondary_region" {
   description = "The secondary AWS region"
   value       = "eu-west-2" # London
 }
+
+
+output "ec2_instance_id" {
+  description = "The ID of the EC2 instance"
+  value       = aws_instance.app.id
+}
+
+
+# Output the Secret ARN for reference
+output "aurora_secret_arn" {
+  description = "ARN of the Aurora database credentials secret"
+  value       = aws_secretsmanager_secret.aurora_credentials.arn
+}
+
+
+# Output the role and profile for reference
+output "ec2_role_arn" {
+  description = "ARN of the EC2 IAM Role"
+  value       = aws_iam_role.ec2_role.arn
+}
+
+output "ec2_instance_profile_name" {
+  description = "Name of the EC2 Instance Profile"
+  value       = aws_iam_instance_profile.ec2_profile.name
+}
+
+output "ecr_repository_url" {
+  description = "The URL of the ECR repository"
+  value       = aws_ecr_repository.app.repository_url
+}
+
+output "ecr_repository_name" {
+  description = "The name of the ECR repository"
+  value       = aws_ecr_repository.app.name
+}

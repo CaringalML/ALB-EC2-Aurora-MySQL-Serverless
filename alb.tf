@@ -10,7 +10,7 @@ resource "aws_lb_target_group" "app" {
 
   health_check {
     enabled             = true
-    path                = "/"
+    path                = "/api/hello"
     port                = "traffic-port"
     healthy_threshold   = 3
     unhealthy_threshold = 3
