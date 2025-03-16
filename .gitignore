@@ -46,5 +46,3 @@ Thumbs.db
 terraform.tfstate
 terraform.tfstate.backup
 
-node_modules
-.env
