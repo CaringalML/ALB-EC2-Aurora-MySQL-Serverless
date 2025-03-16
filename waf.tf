@@ -147,8 +147,7 @@ resource "aws_wafv2_web_acl_association" "main" {
   web_acl_arn  = aws_wafv2_web_acl.main.arn
 }
 
-# Keep the data source in case you need it later
-data "aws_caller_identity" "current" {}
+
 
 # Comment out the problematic logging configuration
 /*

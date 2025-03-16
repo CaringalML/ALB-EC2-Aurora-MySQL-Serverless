@@ -41,6 +41,33 @@ resource "aws_iam_role_policy_attachment" "cloudwatch_policy" {
   policy_arn = "arn:aws:iam::aws:policy/CloudWatchAgentServerPolicy"
 }
 
+# Additional CloudWatch permissions for container logging
+resource "aws_iam_role_policy" "custom_cloudwatch_policy" {
+  name = "${var.project_name}-custom-cloudwatch-policy"
+  role = aws_iam_role.ec2_role.id
+
+  policy = jsonencode({
+    Version = "2012-10-17",
+    Statement = [
+      {
+        Effect = "Allow",
+        Action = [
+          "logs:CreateLogGroup",
+          "logs:CreateLogStream",
+          "logs:PutLogEvents",
+          "logs:DescribeLogStreams",
+          "logs:DescribeLogGroups"
+        ],
+        Resource = [
+          "arn:aws:logs:*:*:log-group:/aws/ec2/${var.project_name}/*",
+          "arn:aws:logs:*:*:log-group:/var/log/syslog:*",
+          "arn:aws:logs:*:*:log-group:/aws/ec2/${var.project_name}/docker:*"
+        ]
+      }
+    ]
+  })
+}
+
 # ECR access policy for pulling images
 resource "aws_iam_policy" "ecr_policy" {
   name        = "${var.project_name}-ecr-policy"
@@ -69,51 +96,10 @@ resource "aws_iam_role_policy_attachment" "ecr_policy_attachment" {
   policy_arn = aws_iam_policy.ecr_policy.arn
 }
 
-# Custom policy for Secrets Manager access
-resource "aws_iam_policy" "secrets_manager_policy" {
-  name        = "${var.project_name}-secrets-manager-policy"
-  description = "Allows EC2 instances to access specific secrets in Secrets Manager"
-  
-  policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [
-      {
-        Effect = "Allow"
-        Action = [
-          "secretsmanager:GetSecretValue",
-          "secretsmanager:DescribeSecret",
-          "secretsmanager:ListSecrets"
-        ]
-        Resource = [
-          "arn:aws:secretsmanager:${var.region}:${data.aws_caller_identity.current.account_id}:secret:${var.project_name}-*"
-        ]
-      },
-      {
-        Effect = "Allow"
-        Action = [
-          "kms:Decrypt"
-        ]
-        Resource = "*"
-        Condition = {
-          StringEquals = {
-            "kms:ViaService" = "secretsmanager.${var.region}.amazonaws.com"
-          }
-        }
-      }
-    ]
-  })
-}
-
-# Attach Secrets Manager policy to the role
-resource "aws_iam_role_policy_attachment" "secrets_manager_policy_attachment" {
-  role       = aws_iam_role.ec2_role.name
-  policy_arn = aws_iam_policy.secrets_manager_policy.arn
-}
-
-# Policy to allow EC2 to connect to Aurora
+# Policy to allow EC2 to connect to MySQL RDS
 resource "aws_iam_policy" "rds_access" {
   name        = "${var.project_name}-rds-access"
-  description = "Policy to allow access to Aurora RDS"
+  description = "Policy to allow access to MySQL RDS"
   
   policy = jsonencode({
     Version = "2012-10-17"
@@ -122,10 +108,11 @@ resource "aws_iam_policy" "rds_access" {
         Action = [
           "rds-data:ExecuteStatement",
           "rds-data:BatchExecuteStatement",
+          "rds:DescribeDBInstances",
           "rds:DescribeDBClusters"
         ]
         Effect   = "Allow"
-        Resource = aws_rds_cluster.primary.arn
+        Resource = "*"  # Allows access to both primary and replica instances
       }
     ]
   })
